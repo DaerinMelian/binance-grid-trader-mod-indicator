@@ -1,6 +1,8 @@
 inance Grid Trading Bot + Backtest System
 This project includes a fully functional Grid Trading bot for Binance and a backtesting module for simulating performance on historical data.
 
+The bot now supports a **compounding grid strategy** that cycles sell and buy orders using the proceeds of each trade. It also calculates technical indicators such as **EMA20**, **EMA50**, **ATR**, and **Stochastic RSI** to assist in decision making.
+
 The grid trading strategy places buy and sell limit orders at predefined price intervals, aiming to profit from market volatility. The backtest engine allows you to test and optimize the strategy using real historical market data before deploying it with live funds.
 
 Features
