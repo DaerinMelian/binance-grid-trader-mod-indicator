@@ -1,4 +1,18 @@
-# grid_bot.py
+"""Compounding grid trading bot.
+
+This module implements the strategy described by the user:
+
+1. **SELL** at ``last_price * (1 + SELL%)``.
+2. After the order is filled, **BUY** at ``executed_price * (1 - BUY%)``
+   using the net proceeds from the sale (minus fees).
+
+The bought quantity becomes the input for the next cycle, effectively
+compounding the base asset.  Technical indicators (EMA20, EMA50, ATR and
+Stochastic RSI) are fetched for monitoring and possible decision making.
+
+All prices and quantities are rounded to Binance's tick/lot sizes.
+"""
+
 import time
 from decimal import Decimal
 
@@ -111,6 +125,22 @@ def get_fills(order_id: int):
     return qty, quote_qty / qty, fee_in_quote
 
 
+def calculate_buy_quantity(
+    filled_qty: float, exec_price: float, fee_in_quote: float, buy_price: float
+) -> float:
+    """Return quantity to buy using sale proceeds.
+
+    ``q_received`` represents the quote currency obtained from the sell order
+    after subtracting the trading fee.  This value is divided by ``buy_price``
+    to obtain the amount of the base asset that can be purchased.  The result
+    is rounded to the exchange's lot size.
+    """
+
+    q_received = filled_qty * exec_price - fee_in_quote
+    amount_to_buy = q_received / buy_price
+    return round_step_size(amount_to_buy, step_size)
+
+
 def compounding_cycle(quantity_to_sell: float) -> float:
     df = fetch_klines()
     last = df.iloc[-1]
@@ -120,18 +150,19 @@ def compounding_cycle(quantity_to_sell: float) -> float:
         f"| ATR: {last['ATR']:.2f} | StochRSI: {last['StochRSI']:.2f}"
     )
 
+    # Step 1: place a sell order slightly above the last price.
     sell_price = round_tick_size(last_price * (1 + SELL_PERCENT), tick_size)
     sell_qty = round_step_size(quantity_to_sell, step_size)
     sell_order = client.order_limit_sell(symbol=SYMBOL, quantity=sell_qty, price=str(sell_price))
     print(f"SELL {sell_qty} {base_asset} @ {sell_price}")
     wait_for_fill(sell_order["orderId"])
 
+    # Net quote received from the sell fill.
     filled_qty, exec_price, fee_in_quote = get_fills(sell_order["orderId"])
-    q_received = filled_qty * exec_price - fee_in_quote
 
+    # Step 2: use proceeds to place a buy order below the executed price.
     buy_price = round_tick_size(exec_price * (1 - BUY_PERCENT), tick_size)
-    amount_to_buy = q_received / buy_price
-    amount_to_buy = round_step_size(amount_to_buy, step_size)
+    amount_to_buy = calculate_buy_quantity(filled_qty, exec_price, fee_in_quote, buy_price)
 
     buy_order = client.order_limit_buy(symbol=SYMBOL, quantity=amount_to_buy, price=str(buy_price))
     print(f"BUY {amount_to_buy} {base_asset} @ {buy_price}")
